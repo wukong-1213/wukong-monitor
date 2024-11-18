@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: monitoring
+
+telegram:
+  bot:
+    token: "your-bot-token"
+    chatId: "your-chat-id"
