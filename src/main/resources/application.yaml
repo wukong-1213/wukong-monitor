@@ -2,7 +2,6 @@ spring:
   application:
     name: monitoring
 
-telegram:
-  bot:
-    token: "your-bot-token"
-    chatId: "your-chat-id"
+discord:
+  token: ${DISCORD_TOKEN}
+  channel-id: ${DISCORD_CHANNEL_ID}
