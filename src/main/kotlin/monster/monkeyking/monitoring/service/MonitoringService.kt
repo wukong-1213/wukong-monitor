@@ -19,10 +19,9 @@ class MonitoringService(
         val metrics = collectors.flatMap { collector ->
             runCatching {
                 collector.collect()
-            }.getOrElse { error ->
-                logger.error("Error collecting metrics from ${collector.name}: ${error.message}")
-                emptyList()
-            }
+            }.onFailure { error ->
+                logger.error("Error collecting metrics from ${collector.name}: ${error.message}", error)
+            }.getOrElse { emptyList() }
         }
 
         applicationEventPublisher.publishEvent(MetricsCollectedEvent(metrics))
