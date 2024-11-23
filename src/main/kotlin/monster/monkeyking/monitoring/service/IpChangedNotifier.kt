@@ -18,18 +18,24 @@ class IpChangedNotifier(
 
     @EventListener
     fun handleIpChange(event: IpChangeEvent) {
+        val description = buildString {
+            append("🔄 ")
+            if (event.previousIp != null) {
+                append("${event.previousIp} → ")
+            }
+            append(event.newIp)
+        }
+
         val embed = EmbedBuilder()
-            .setTitle("🔔 IP 주소 변경 알림")
-            .setColor(Color.ORANGE)
-            .addField("이전 IP", event.previousIp ?: "없음", false)
-            .addField("현재 IP", event.newIp, false)
-            .setTimestamp(event.timestamp)
+            .setDescription(description)
+            .setColor(Color(88, 101, 242)) // Discord 블루 컬러
             .build()
 
         discordBot.getTextChannelById(discordChannelId)
             ?.sendMessageEmbeds(embed)
             ?.queue()
     }
+
 
     override fun afterPropertiesSet() {
         assert(discordBot.getTextChannelById(discordChannelId) != null) {
