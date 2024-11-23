@@ -1,5 +1,6 @@
 package monster.monkeyking.monitoring.service
 
+
 import monster.monkeyking.monitoring.model.event.MetricEvent
 import net.dv8tion.jda.api.EmbedBuilder
 import net.dv8tion.jda.api.JDA
@@ -32,16 +33,14 @@ class ServerMonitoringDashboard(
     private val currentMetrics = AtomicReference(SystemMetrics())
 
     data class SystemMetrics(
-        val cpuUsageProcess: Double = 0.0,
-        val cpuUsageSystem: Double = 0.0,
-        val memoryUsed: Long = 0,
-        val memoryTotal: Long = 0,
+        val cpuUsageSystem: Double = 0.0,     // OS CPU
+        val systemMemoryUsed: Long = 0,       // OS Memory
+        val systemMemoryTotal: Long = 0,      // OS Memory
         val publicIp: String = "unknown",
         val lastUpdated: Instant = Instant.now()
     )
 
     override fun afterPropertiesSet() {
-        // JDA 이벤트 리스너 등록
         discordBot.addEventListener(object : ListenerAdapter() {
             override fun onReady(event: ReadyEvent) {
                 logger.info("Discord 봇 준비 완료, 채널 정리 시작")
@@ -60,7 +59,6 @@ class ServerMonitoringDashboard(
             logger.info("채널 '${channel.name}' 메시지 정리 시작...")
             var deletedCount = 0
 
-            // 채널의 모든 메시지를 가져와서 삭제
             var messages: List<Message>
             do {
                 messages = channel.history.retrievePast(100).complete()
@@ -73,7 +71,7 @@ class ServerMonitoringDashboard(
                         deletedCount += messages.size
                     }
                 }
-            } while (messages.size == 100) // 100개씩 가져오므로, 100개면 더 있을 수 있음
+            } while (messages.size == 100)
 
             logger.info("채널 메시지 정리 완료. 총 ${deletedCount}개의 메시지 삭제됨")
         } catch (e: Exception) {
@@ -84,30 +82,57 @@ class ServerMonitoringDashboard(
     @EventListener
     fun handleCpuMetric(event: MetricEvent.CpuMetricCollected) {
         updateMetrics { current ->
-            current.copy(
-                cpuUsageProcess = event.usage,
-                lastUpdated = Instant.now()
-            )
+            when (event.labels["type"]) {
+                "system" -> current.copy(
+                    cpuUsageSystem = event.usage,
+                    lastUpdated = Instant.now()
+                )
+
+                else -> current
+            }
         }
+    }
+
+    // 메모리 업데이트 유형을 표현하는 sealed interface 추가
+    private sealed interface MemoryUpdateType {
+        val value: Long
+        val type: String
+
+        data class Used(override val value: Long, override val type: String) : MemoryUpdateType
+        data class Total(override val value: Long, override val type: String) : MemoryUpdateType
     }
 
     @EventListener
     fun handleMemoryUsedMetric(event: MetricEvent.MemoryUsedCollected) {
-        updateMetrics { current ->
-            current.copy(
-                memoryUsed = event.used,
-                lastUpdated = Instant.now()
-            )
-        }
+        handleMemoryMetric(MemoryUpdateType.Used(event.used, event.labels["type"] ?: ""))
     }
 
     @EventListener
     fun handleMemoryTotalMetric(event: MetricEvent.MemoryTotalCollected) {
+        handleMemoryMetric(MemoryUpdateType.Total(event.total, event.labels["type"] ?: ""))
+    }
+
+    private fun handleMemoryMetric(update: MemoryUpdateType) {
         updateMetrics { current ->
-            current.copy(
-                memoryTotal = event.total,
-                lastUpdated = Instant.now()
-            )
+            when (update) {
+                is MemoryUpdateType.Used -> when (update.type) {
+                    "system_used" -> current.copy(
+                        systemMemoryUsed = update.value,
+                        lastUpdated = Instant.now()
+                    )
+
+                    else -> current
+                }
+
+                is MemoryUpdateType.Total -> when (update.type) {
+                    "system_total" -> current.copy(
+                        systemMemoryTotal = update.value,
+                        lastUpdated = Instant.now()
+                    )
+
+                    else -> current
+                }
+            }
         }
     }
 
@@ -138,13 +163,12 @@ class ServerMonitoringDashboard(
         if (dashboardMessage == null) {
             sendNewDashboardMessage(embed)
         } else {
-            // 메시지가 아직 존재하는지 확인
             try {
                 dashboardMessage?.editMessageEmbeds(embed)
                     ?.queue(
                         { /* 성공 시 아무것도 하지 않음 */ },
                         { error ->
-                            if (error is ErrorResponseException && error.errorResponse.code == 10008) { // Unknown Message 에러 코드
+                            if (error is ErrorResponseException && error.errorResponse.code == 10008) {
                                 logger.info("대시보드 메시지가 삭제됨. 새로운 메시지 생성")
                                 dashboardMessage = null
                                 sendNewDashboardMessage(embed)
@@ -170,43 +194,58 @@ class ServerMonitoringDashboard(
             )
     }
 
+    private data class MemoryMetrics(
+        val usedGB: Double,
+        val totalGB: Double,
+        val usagePercent: Int,
+        val progressBar: String
+    )
+
+    private fun calculateMemoryMetrics(used: Long, total: Long): MemoryMetrics {
+        val usedGB = used / (1024.0 * 1024.0 * 1024.0)
+        val totalGB = total / (1024.0 * 1024.0 * 1024.0)
+        val usagePercent = if (total > 0) {
+            (used.toDouble() / total.toDouble() * 100).roundToInt()
+        } else 0
+
+        return MemoryMetrics(
+            usedGB = usedGB,
+            totalGB = totalGB,
+            usagePercent = usagePercent,
+            progressBar = createProgressBar(usagePercent)
+        )
+    }
+
     private fun createMonitoringEmbed(): MessageEmbed {
         val metrics = currentMetrics.get()
-        val memoryUsedGB = metrics.memoryUsed / (1024.0 * 1024.0 * 1024.0)
-        val memoryTotalGB = metrics.memoryTotal / (1024.0 * 1024.0 * 1024.0)
-        val memoryUsagePercent = if (metrics.memoryTotal > 0) {
-            (metrics.memoryUsed.toDouble() / metrics.memoryTotal.toDouble() * 100).roundToInt()
-        } else 0
+
+        // Calculate memory metrics
+        val systemMemory = calculateMemoryMetrics(metrics.systemMemoryUsed, metrics.systemMemoryTotal)
 
         return EmbedBuilder().apply {
             setTitle("🖥️ 서버 모니터링 대시보드")
-            setColor(getStatusColor(maxOf(metrics.cpuUsageProcess.roundToInt(), memoryUsagePercent)))
+            setColor(getStatusColor(maxOf(metrics.cpuUsageSystem.roundToInt(), systemMemory.usagePercent)))
 
             // 공인 IP 정보
-            addField(
-                "🌐 공인 IP", """
-                ```
-                ${metrics.publicIp}                
-                ```
-            """.trimIndent(), true
-            )
+            addField("🌐 공인 IP", "```${metrics.publicIp}```", false)
 
-            // CPU 사용량 프로그레스 바
-            val cpuBar = createProgressBar(metrics.cpuUsageProcess.roundToInt())
+            val systemCpuBar = createProgressBar(metrics.cpuUsageSystem.roundToInt())
             addField(
-                "CPU 사용량", """
+                "💻 시스템 CPU", """
                 ```
-                $cpuBar ${df.format(metrics.cpuUsageProcess)}%
+                $systemCpuBar ${df.format(metrics.cpuUsageSystem)}%
                 ```
             """.trimIndent(), false
             )
 
-            // 메모리 사용량 프로그레스 바
-            val memoryBar = createProgressBar(memoryUsagePercent)
             addField(
-                "메모리 사용량", """
+                "💻 시스템 메모리", """
                 ```
-                $memoryBar $memoryUsagePercent% (${df.format(memoryUsedGB)}GB/${df.format(memoryTotalGB)}GB)
+                ${systemMemory.progressBar} ${systemMemory.usagePercent}% (${df.format(systemMemory.usedGB)}GB/${
+                    df.format(
+                        systemMemory.totalGB
+                    )
+                }GB)
                 ```
             """.trimIndent(), false
             )

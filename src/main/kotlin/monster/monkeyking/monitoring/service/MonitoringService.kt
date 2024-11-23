@@ -14,7 +14,7 @@ class MonitoringService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    @Scheduled(fixedRate = 10_000)
+    @Scheduled(fixedRate = 1000)
     suspend fun collectMetrics() {
         val metrics = collectors.flatMap { collector ->
             runCatching {

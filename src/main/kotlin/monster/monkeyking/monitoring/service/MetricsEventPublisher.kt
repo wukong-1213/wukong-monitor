@@ -4,7 +4,6 @@ import monster.monkeyking.monitoring.model.event.MetricEvent
 import monster.monkeyking.monitoring.model.event.MetricsCollectedEvent
 import monster.monkeyking.monitoring.model.metric.MetricData
 import monster.monkeyking.monitoring.model.metric.MetricType
-import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
@@ -13,8 +12,7 @@ import org.springframework.stereotype.Service
 class MetricEventPublisher(
     private val applicationEventPublisher: ApplicationEventPublisher,
 ) {
-    private val logger = LoggerFactory.getLogger(javaClass)
-
+    
     @EventListener(condition = "!#event.metrics.empty")
     fun handleMetrics(event: MetricsCollectedEvent) {
         event.metrics.forEach { metric ->
@@ -38,7 +36,8 @@ class MetricEventPublisher(
     private fun publishCpuMetric(metric: MetricData) {
         applicationEventPublisher.publishEvent(
             MetricEvent.CpuMetricCollected(
-                usage = metric.value
+                usage = metric.value,
+                labels = metric.labels
             )
         )
     }
@@ -46,7 +45,8 @@ class MetricEventPublisher(
     private fun publishMemoryUsedMetric(metric: MetricData) {
         applicationEventPublisher.publishEvent(
             MetricEvent.MemoryUsedCollected(
-                used = metric.value.toLong()
+                used = metric.value.toLong(),
+                labels = metric.labels
             )
         )
     }
@@ -54,7 +54,8 @@ class MetricEventPublisher(
     private fun publishMemoryTotalMetric(metric: MetricData) {
         applicationEventPublisher.publishEvent(
             MetricEvent.MemoryTotalCollected(
-                total = metric.value.toLong()
+                total = metric.value.toLong(),
+                labels = metric.labels
             )
         )
     }

@@ -15,12 +15,6 @@ class CpuMetricCollector : SystemMetricCollector {
         return listOf(
             MetricData(
                 type = MetricType.CPU_USAGE,
-                value = osBean.processCpuLoad * 100,
-                unit = "percentage",
-                labels = mapOf("type" to "process")
-            ),
-            MetricData(
-                type = MetricType.CPU_USAGE,
                 value = osBean.cpuLoad * 100,
                 unit = "percentage",
                 labels = mapOf("type" to "system")
