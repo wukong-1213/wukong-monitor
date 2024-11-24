@@ -35,4 +35,24 @@ sealed class MetricEvent(
     data class DiskTotalCollected(
         val total: Long
     ) : MetricEvent()
+
+    data class NetworkInCollected(
+        val bytesPerSecond: Double,
+        val interfaceName: String
+    ) : MetricEvent()
+
+    data class NetworkOutCollected(
+        val bytesPerSecond: Double,
+        val interfaceName: String
+    ) : MetricEvent()
+
+    data class DiskReadCollected(
+        val bytesPerSecond: Double,
+        val device: String
+    ) : MetricEvent()
+
+    data class DiskWriteCollected(
+        val bytesPerSecond: Double,
+        val device: String
+    ) : MetricEvent()
 }

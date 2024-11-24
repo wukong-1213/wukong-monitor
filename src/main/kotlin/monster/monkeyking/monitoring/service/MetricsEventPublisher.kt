@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service
 class MetricEventPublisher(
     private val applicationEventPublisher: ApplicationEventPublisher,
 ) {
-
     @EventListener(condition = "!#event.metrics.empty")
     fun handleMetrics(event: MetricsCollectedEvent) {
         event.metrics.forEach { metric ->
@@ -24,6 +23,10 @@ class MetricEventPublisher(
                 MetricType.MEMORY_TOTAL -> publishMemoryTotalMetric(metric)
                 MetricType.DISK_USED -> publishDiskUsedMetric(metric)
                 MetricType.DISK_TOTAL -> publishDiskTotalMetric(metric)
+                MetricType.DISK_READ -> publishDiskReadMetric(metric)
+                MetricType.DISK_WRITE -> publishDiskWriteMetric(metric)
+                MetricType.NETWORK_IN -> publishNetworkInMetric(metric)
+                MetricType.NETWORK_OUT -> publishNetworkOutMetric(metric)
             }
         }
     }
@@ -83,6 +86,42 @@ class MetricEventPublisher(
         applicationEventPublisher.publishEvent(
             MetricEvent.DiskTotalCollected(
                 total = metric.value.toLong()
+            )
+        )
+    }
+
+    private fun publishDiskReadMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.DiskReadCollected(
+                bytesPerSecond = metric.value,
+                device = metric.labels["device"] ?: "unknown"
+            )
+        )
+    }
+
+    private fun publishDiskWriteMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.DiskWriteCollected(
+                bytesPerSecond = metric.value,
+                device = metric.labels["device"] ?: "unknown"
+            )
+        )
+    }
+
+    private fun publishNetworkInMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.NetworkInCollected(
+                bytesPerSecond = metric.value,
+                interfaceName = metric.labels["interface"] ?: "unknown"
+            )
+        )
+    }
+
+    private fun publishNetworkOutMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.NetworkOutCollected(
+                bytesPerSecond = metric.value,
+                interfaceName = metric.labels["interface"] ?: "unknown"
             )
         )
     }

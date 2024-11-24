@@ -7,5 +7,9 @@ enum class MetricType {
     MEMORY_TOTAL,
     DISK_USED,
     DISK_TOTAL,
+    DISK_READ,
+    DISK_WRITE,
+    NETWORK_IN,
+    NETWORK_OUT,
     PUBLIC_IP
 }

@@ -38,9 +38,13 @@ class ServerMonitoringDashboard(
         val systemMemoryTotal: Long = 0,      // OS Memory
         val diskUsed: Long = 0,               // Disk Used
         val diskTotal: Long = 0,              // Disk Total
+        val diskReadBytes: Double = 0.0,      // Disk Read Speed
+        val diskWriteBytes: Double = 0.0,     // Disk Write Speed
+        val networkInBytes: Double = 0.0,     // Network In Speed
+        val networkOutBytes: Double = 0.0,    // Network Out Speed
         val publicIp: String = "unknown",
         val lastUpdated: Instant = Instant.now(),
-        var initialized: Boolean = false       // 초기화 여부 추가
+        var initialized: Boolean = false       // 초기화 여부
     )
 
     private data class ResourceMetrics(
@@ -196,6 +200,63 @@ class ServerMonitoringDashboard(
         }
     }
 
+    @EventListener
+    fun handleDiskReadMetric(event: MetricEvent.DiskReadCollected) {
+        updateMetrics { current ->
+            current.copy(
+                diskReadBytes = event.bytesPerSecond,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
+    @EventListener
+    fun handleDiskWriteMetric(event: MetricEvent.DiskWriteCollected) {
+        updateMetrics { current ->
+            current.copy(
+                diskWriteBytes = event.bytesPerSecond,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
+    @EventListener
+    fun handleNetworkInMetric(event: MetricEvent.NetworkInCollected) {
+        updateMetrics { current ->
+            current.copy(
+                networkInBytes = event.bytesPerSecond,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
+    @EventListener
+    fun handleNetworkOutMetric(event: MetricEvent.NetworkOutCollected) {
+        updateMetrics { current ->
+            current.copy(
+                networkOutBytes = event.bytesPerSecond,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
+    // 속도 단위 변환을 위한 유틸리티 함수
+    private fun formatSpeed(bytesPerSecond: Double): String {
+        return when {
+            bytesPerSecond >= 1024 * 1024 * 1024 ->
+                "${df.format(bytesPerSecond / (1024 * 1024 * 1024))} GB/s"
+
+            bytesPerSecond >= 1024 * 1024 ->
+                "${df.format(bytesPerSecond / (1024 * 1024))} MB/s"
+
+            bytesPerSecond >= 1024 ->
+                "${df.format(bytesPerSecond / 1024)} KB/s"
+
+            else ->
+                "${df.format(bytesPerSecond)} B/s"
+        }
+    }
+
     private fun updateMetrics(update: (SystemMetrics) -> SystemMetrics) {
         while (true) {
             val current = currentMetrics.get()
@@ -265,6 +326,26 @@ class ServerMonitoringDashboard(
         )
     }
 
+    private fun EmbedBuilder.addIOField(metrics: SystemMetrics) {
+        addField(
+            "💿 디스크 I/O", """
+        ```
+        읽기: ${formatSpeed(metrics.diskReadBytes)}
+        쓰기: ${formatSpeed(metrics.diskWriteBytes)}
+        ```
+    """.trimIndent(), true
+        )
+
+        addField(
+            "🌐 네트워크 I/O", """
+        ```
+        수신: ${formatSpeed(metrics.networkInBytes)}
+        송신: ${formatSpeed(metrics.networkOutBytes)}
+        ```
+    """.trimIndent(), true
+        )
+    }
+
     private fun createMonitoringEmbed(): MessageEmbed {
         val metrics = currentMetrics.get()
 
@@ -301,6 +382,9 @@ class ServerMonitoringDashboard(
                 "💾 디스크 사용량",
                 systemDisk
             )
+
+            // I/O 정보
+            addIOField(metrics)
 
             setTimestamp(Instant.now())
         }.build()
