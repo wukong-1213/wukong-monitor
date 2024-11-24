@@ -12,15 +12,18 @@ import org.springframework.stereotype.Service
 class MetricEventPublisher(
     private val applicationEventPublisher: ApplicationEventPublisher,
 ) {
-    
+
     @EventListener(condition = "!#event.metrics.empty")
     fun handleMetrics(event: MetricsCollectedEvent) {
         event.metrics.forEach { metric ->
             when (metric.type) {
                 MetricType.PUBLIC_IP -> publishIpMetric(metric)
                 MetricType.CPU_USAGE -> publishCpuMetric(metric)
+                MetricType.CPU_CORES -> publishCpuCoresMetric(metric)
                 MetricType.MEMORY_USED -> publishMemoryUsedMetric(metric)
                 MetricType.MEMORY_TOTAL -> publishMemoryTotalMetric(metric)
+                MetricType.DISK_USED -> publishDiskUsedMetric(metric)
+                MetricType.DISK_TOTAL -> publishDiskTotalMetric(metric)
             }
         }
     }
@@ -42,6 +45,14 @@ class MetricEventPublisher(
         )
     }
 
+    private fun publishCpuCoresMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.CpuCoresCollected(
+                cores = metric.value.toInt()
+            )
+        )
+    }
+
     private fun publishMemoryUsedMetric(metric: MetricData) {
         applicationEventPublisher.publishEvent(
             MetricEvent.MemoryUsedCollected(
@@ -56,6 +67,22 @@ class MetricEventPublisher(
             MetricEvent.MemoryTotalCollected(
                 total = metric.value.toLong(),
                 labels = metric.labels
+            )
+        )
+    }
+
+    private fun publishDiskUsedMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.DiskUsedCollected(
+                used = metric.value.toLong()
+            )
+        )
+    }
+
+    private fun publishDiskTotalMetric(metric: MetricData) {
+        applicationEventPublisher.publishEvent(
+            MetricEvent.DiskTotalCollected(
+                total = metric.value.toLong()
             )
         )
     }

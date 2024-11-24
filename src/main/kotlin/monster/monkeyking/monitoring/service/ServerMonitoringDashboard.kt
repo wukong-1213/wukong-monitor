@@ -1,6 +1,5 @@
 package monster.monkeyking.monitoring.service
 
-
 import monster.monkeyking.monitoring.model.event.MetricEvent
 import net.dv8tion.jda.api.EmbedBuilder
 import net.dv8tion.jda.api.JDA
@@ -34,17 +33,39 @@ class ServerMonitoringDashboard(
 
     data class SystemMetrics(
         val cpuUsageSystem: Double = 0.0,     // OS CPU
+        val cpuCores: Int = 0,                // CPU Cores
         val systemMemoryUsed: Long = 0,       // OS Memory
         val systemMemoryTotal: Long = 0,      // OS Memory
+        val diskUsed: Long = 0,               // Disk Used
+        val diskTotal: Long = 0,              // Disk Total
         val publicIp: String = "unknown",
-        val lastUpdated: Instant = Instant.now()
+        val lastUpdated: Instant = Instant.now(),
+        var initialized: Boolean = false       // 초기화 여부 추가
+    )
+
+    private data class ResourceMetrics(
+        val used: Double,
+        val total: Double,
+        val usagePercent: Int,
+        val progressBar: String,
+        val unit: String = "GB"  // 기본값은 GB, 필요시 TB 등으로 변경 가능
     )
 
     override fun afterPropertiesSet() {
+        // 이미 초기화된 경우 리턴
+        if (currentMetrics.get().initialized) {
+            return
+        }
+
         discordBot.addEventListener(object : ListenerAdapter() {
             override fun onReady(event: ReadyEvent) {
-                logger.info("Discord 봇 준비 완료, 채널 정리 시작")
-                cleanupChannel()
+                val current = currentMetrics.get()
+                if (!current.initialized) {
+                    logger.info("Discord 봇 준비 완료, 채널 정리 시작")
+                    cleanupChannel()
+                    // 초기화 완료 표시
+                    currentMetrics.set(current.copy(initialized = true))
+                }
             }
         })
     }
@@ -93,7 +114,16 @@ class ServerMonitoringDashboard(
         }
     }
 
-    // 메모리 업데이트 유형을 표현하는 sealed interface 추가
+    @EventListener
+    fun handleCpuCoresMetric(event: MetricEvent.CpuCoresCollected) {
+        updateMetrics { current ->
+            current.copy(
+                cpuCores = event.cores,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
     private sealed interface MemoryUpdateType {
         val value: Long
         val type: String
@@ -133,6 +163,26 @@ class ServerMonitoringDashboard(
                     else -> current
                 }
             }
+        }
+    }
+
+    @EventListener
+    fun handleDiskUsedMetric(event: MetricEvent.DiskUsedCollected) {
+        updateMetrics { current ->
+            current.copy(
+                diskUsed = event.used,
+                lastUpdated = Instant.now()
+            )
+        }
+    }
+
+    @EventListener
+    fun handleDiskTotalMetric(event: MetricEvent.DiskTotalCollected) {
+        updateMetrics { current ->
+            current.copy(
+                diskTotal = event.total,
+                lastUpdated = Instant.now()
+            )
         }
     }
 
@@ -194,64 +244,105 @@ class ServerMonitoringDashboard(
             )
     }
 
-    private data class MemoryMetrics(
-        val usedGB: Double,
-        val totalGB: Double,
-        val usagePercent: Int,
-        val progressBar: String
-    )
-
-    private fun calculateMemoryMetrics(used: Long, total: Long): MemoryMetrics {
-        val usedGB = used / (1024.0 * 1024.0 * 1024.0)
-        val totalGB = total / (1024.0 * 1024.0 * 1024.0)
+    private fun calculateResourceMetrics(
+        used: Long,
+        total: Long,
+        divisor: Double = 1024.0 * 1024.0 * 1024.0,  // 기본값은 GB 변환용
+        unit: String = "GB"
+    ): ResourceMetrics {
+        val usedValue = used / divisor
+        val totalValue = total / divisor
         val usagePercent = if (total > 0) {
             (used.toDouble() / total.toDouble() * 100).roundToInt()
         } else 0
 
-        return MemoryMetrics(
-            usedGB = usedGB,
-            totalGB = totalGB,
+        return ResourceMetrics(
+            used = usedValue,
+            total = totalValue,
             usagePercent = usagePercent,
-            progressBar = createProgressBar(usagePercent)
+            progressBar = createProgressBar(usagePercent),
+            unit = unit
         )
     }
 
     private fun createMonitoringEmbed(): MessageEmbed {
         val metrics = currentMetrics.get()
 
-        // Calculate memory metrics
-        val systemMemory = calculateMemoryMetrics(metrics.systemMemoryUsed, metrics.systemMemoryTotal)
+        // Calculate metrics
+        val systemMemory = calculateResourceMetrics(metrics.systemMemoryUsed, metrics.systemMemoryTotal)
+        val systemDisk = calculateResourceMetrics(metrics.diskUsed, metrics.diskTotal)
 
         return EmbedBuilder().apply {
             setTitle("🖥️ 서버 모니터링 대시보드")
-            setColor(getStatusColor(maxOf(metrics.cpuUsageSystem.roundToInt(), systemMemory.usagePercent)))
-
-            // 공인 IP 정보
-            addField("🌐 공인 IP", "```${metrics.publicIp}```", false)
-
-            val systemCpuBar = createProgressBar(metrics.cpuUsageSystem.roundToInt())
-            addField(
-                "💻 시스템 CPU", """
-                ```
-                $systemCpuBar ${df.format(metrics.cpuUsageSystem)}%
-                ```
-            """.trimIndent(), false
+            setColor(
+                getStatusColor(
+                    maxOf(
+                        metrics.cpuUsageSystem.roundToInt(),
+                        systemMemory.usagePercent,
+                        systemDisk.usagePercent
+                    )
+                )
             )
 
-            addField(
-                "💻 시스템 메모리", """
-                ```
-                ${systemMemory.progressBar} ${systemMemory.usagePercent}% (${df.format(systemMemory.usedGB)}GB/${
-                    df.format(
-                        systemMemory.totalGB
-                    )
-                }GB)
-                ```
-            """.trimIndent(), false
+            // 시스템 정보
+            addSystemInfoField(metrics)
+
+            // CPU 사용량
+            addCpuUsageField(metrics)
+
+            // 메모리 사용량
+            addResourceUsageField(
+                "💻 시스템 메모리",
+                systemMemory
+            )
+
+            // 디스크 사용량
+            addResourceUsageField(
+                "💾 디스크 사용량",
+                systemDisk
             )
 
             setTimestamp(Instant.now())
         }.build()
+    }
+
+    private fun EmbedBuilder.addSystemInfoField(metrics: SystemMetrics) {
+        addField(
+            "🌐 시스템 정보", """
+            ```
+            IP: ${metrics.publicIp}
+            CPU 코어: ${metrics.cpuCores}개
+            ```
+        """.trimIndent(), false
+        )
+    }
+
+    private fun EmbedBuilder.addCpuUsageField(metrics: SystemMetrics) {
+        val systemCpuBar = createProgressBar(metrics.cpuUsageSystem.roundToInt())
+        addField(
+            "💻 시스템 CPU", """
+            ```
+            $systemCpuBar ${df.format(metrics.cpuUsageSystem)}%
+            ```
+        """.trimIndent(), false
+        )
+    }
+
+    private fun EmbedBuilder.addResourceUsageField(
+        title: String,
+        metrics: ResourceMetrics
+    ) {
+        addField(
+            title, """
+            ```
+            ${metrics.progressBar} ${metrics.usagePercent}% (${df.format(metrics.used)}${metrics.unit}/${
+                df.format(
+                    metrics.total
+                )
+            }${metrics.unit})
+            ```
+        """.trimIndent(), false
+        )
     }
 
     private fun createProgressBar(percent: Int): String {

@@ -7,5 +7,4 @@ interface MetricCollector {
     suspend fun collect(): List<MetricData>
 }
 
-interface SystemMetricCollector : MetricCollector
 interface NetworkMetricCollector : MetricCollector

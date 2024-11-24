@@ -5,11 +5,17 @@ import java.time.Instant
 sealed class MetricEvent(
     val timestamp: Instant = Instant.now(),
 ) {
-    data class IpMetricCollected(val ip: String) : MetricEvent()
+    data class IpMetricCollected(
+        val ip: String
+    ) : MetricEvent()
 
     data class CpuMetricCollected(
         val usage: Double,
         val labels: Map<String, String> = emptyMap()
+    ) : MetricEvent()
+
+    data class CpuCoresCollected(
+        val cores: Int
     ) : MetricEvent()
 
     data class MemoryUsedCollected(
@@ -20,5 +26,13 @@ sealed class MetricEvent(
     data class MemoryTotalCollected(
         val total: Long,
         val labels: Map<String, String> = emptyMap()
+    ) : MetricEvent()
+
+    data class DiskUsedCollected(
+        val used: Long
+    ) : MetricEvent()
+
+    data class DiskTotalCollected(
+        val total: Long
     ) : MetricEvent()
 }
