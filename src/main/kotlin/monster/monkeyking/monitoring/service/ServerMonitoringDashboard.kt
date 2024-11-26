@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service
 import java.awt.Color
 import java.text.DecimalFormat
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
@@ -29,6 +31,7 @@ class ServerMonitoringDashboard(
     private val logger = LoggerFactory.getLogger(javaClass)
     private var dashboardMessage: Message? = null
     private val df = DecimalFormat("#.##")
+    private val timeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Seoul"))
     private val currentMetrics = AtomicReference(SystemMetrics())
 
     data class SystemMetrics(
@@ -267,7 +270,7 @@ class ServerMonitoringDashboard(
         }
     }
 
-    @Scheduled(fixedRate = 1000)
+    @Scheduled(fixedRate = 5000)
     fun updateDashboard() {
         val embed = createMonitoringEmbed()
 
@@ -386,13 +389,13 @@ class ServerMonitoringDashboard(
             // I/O 정보
             addIOField(metrics)
 
-            setTimestamp(Instant.now())
+            setFooter(timeFormatter.format(Instant.now()))
         }.build()
     }
 
     private fun EmbedBuilder.addSystemInfoField(metrics: SystemMetrics) {
         addField(
-            "🌐 시스템 정보", """
+            "💻 시스템 정보", """
             ```
             IP: ${metrics.publicIp}
             CPU 코어: ${metrics.cpuCores}개
