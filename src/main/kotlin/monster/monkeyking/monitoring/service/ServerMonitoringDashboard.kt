@@ -270,7 +270,7 @@ class ServerMonitoringDashboard(
         }
     }
 
-    @Scheduled(fixedRate = 5000)
+    @Scheduled(fixedRate = 10_000)
     fun updateDashboard() {
         val embed = createMonitoringEmbed()
 
